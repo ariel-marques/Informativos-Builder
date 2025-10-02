@@ -29,8 +29,10 @@ Este app gera automaticamente os `<li>` dos Informativos (Curso Objetivo) a part
 
 ## Padrões esperados
 - PDFs nomeados como: `NUM-SIGLA-ANO.pdf` (ex.: `275-FASM-2026.pdf`).
-- O app tenta extrair do conteúdo do PDF: número, sigla, nome completo, ano e semestre (`1.º` ou `2.º`).  
+- O app tenta extrair do conteúdo do PDF: número, sigla, nome completo, ano e semestre (`1.º` ou `2.º`).
   Caso não encontre, usa o **fallback** baseado no nome do arquivo.
+- Quando os dados obrigatórios são encontrados, o PDF é automaticamente renomeado para o padrão `NUM-SIGLA-ANO.pdf`
+  (acréscimos numéricos são incluídos se já existir um arquivo com o mesmo nome).
 - O HTML gerado segue o padrão:
   ```html
   <li class="informativo list-group-item col-12 col-md-6 border-end">

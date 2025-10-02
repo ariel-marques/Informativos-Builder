@@ -82,6 +82,44 @@ def build_li(number, acronym, fullname, year, sem, filename):
         '</li>'
     )
 
+def sanitize_part(value: str, pattern: str) -> str:
+    cleaned = re.sub(pattern, "", value or "")
+    return cleaned
+
+def build_filename(number: str, acronym: str, year: str) -> str:
+    number_clean = sanitize_part(number, r"[^0-9]")
+    acronym_clean = sanitize_part(acronym.upper(), r"[^A-Z0-9]")
+    year_clean = sanitize_part(year, r"[^0-9]")
+    if not (number_clean and acronym_clean and year_clean):
+        return ""
+    return f"{number_clean}-{acronym_clean}-{year_clean}.pdf"
+
+def ensure_unique_name(folder: Path, filename: str) -> Path:
+    target = folder / filename
+    if not target.exists():
+        return target
+    stem = target.stem
+    suffix = target.suffix
+    counter = 1
+    while True:
+        candidate = folder / f"{stem}-{counter}{suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+def maybe_rename_pdf(pdf: Path, number: str, acronym: str, year: str) -> Path:
+    desired_name = build_filename(number, acronym, year)
+    if not desired_name:
+        return pdf
+    if pdf.name == desired_name:
+        return pdf
+    target = ensure_unique_name(pdf.parent, desired_name)
+    try:
+        pdf = pdf.rename(target)
+    except Exception:
+        return pdf
+    return pdf
+
 def generate_from_folder(folder: Path) -> str:
     pdfs = sorted(p for p in folder.iterdir() if p.suffix.lower()==".pdf")
     items = []
@@ -101,6 +139,7 @@ def generate_from_folder(folder: Path) -> str:
                     sem = "1"
             else:
                 continue
+        pdf = maybe_rename_pdf(pdf, number, acronym, year)
         items.append(build_li(number, acronym, fullname, year, sem, pdf.name))
     return "\n".join(items)
 
