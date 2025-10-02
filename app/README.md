@@ -1,50 +1,55 @@
-# Informativos Builder (.exe leve)
+# Informativos Builder
 
-Este app gera automaticamente os `<li>` dos Informativos (Curso Objetivo) a partir de uma pasta com PDFs.
+Ferramentas para extrair metadados dos PDFs de informativos, normalizar os arquivos e gerar a listagem em HTML.
 
 ## Requisitos
-- Windows 10/11
-- Python 3.10 ou superior (https://www.python.org/downloads/)
-- (Opcional) Para gerar o `.exe`: PyInstaller
+- Python 3.10 ou superior
+- Dependências do projeto: `pip install -r requirements.txt`
 
-## Como usar sem compilar (modo rápido)
-1. Instale o Python e o pip.
-2. No Prompt de Comando (ou PowerShell), dentro da pasta `app/`:
+## Processamento via CLI
+1. Organize os PDFs que deseja processar em uma pasta (ex.: `./pdfs`).
+2. Execute o comando abaixo a partir da raiz do repositório:
    ```bash
-   python -m pip install -r requirements.txt
-   python main.py
+   python -m app.processor.cli ./pdfs --out informativos.html
    ```
-3. Na janela:
-   - Clique em **Selecionar...** e escolha a pasta com os PDFs.
-   - Clique em **Salvar como...** e escolha o arquivo `informativos.html`.
-   - Clique em **Gerar HTML**.
+   Opções úteis:
+   - `--dest-root`: raiz onde os PDFs serão salvos. Padrão: `assets/download/informativos`.
+   - `--report`: caminho do relatório JSON com sucessos e pendências. Padrão: `relatorio_processamento.json`.
+   - `--force-filename`: permite usar o número extraído do nome do arquivo quando ausente no PDF.
+3. O script gera:
+   - PDFs renomeados para `NUM-SIGLA-ANO.pdf` (ex.: `275-FASM-2026.pdf`) dentro de `assets/download/informativos/ANO/`.
+   - `informativos.html` com um `<li>` por PDF seguindo o padrão do site.
+   - `relatorio_processamento.json` com o resumo de processamento.
 
-## Como gerar o `.exe`
-1. Abra o Prompt de Comando (ou PowerShell) na pasta `app/`.
-2. Rode:
-   ```bash
-   build.bat
-   ```
-3. O executável ficará em: `dist/InformativosBuilder.exe`.
+### Makefile
+Há um atalho para processamento:
+```bash
+make processar PROCESS_INPUT=./pdfs PROCESS_OUT=informativos.html
+```
+As variáveis `PROCESS_DEST` e `PROCESS_REPORT` podem ser personalizadas se necessário.
 
-## Padrões esperados
-- PDFs nomeados como: `NUM-SIGLA-ANO.pdf` (ex.: `275-FASM-2026.pdf`).
-- O app tenta extrair do conteúdo do PDF: número, sigla, nome completo, ano e semestre (`1.º` ou `2.º`).
-  Caso não encontre, usa o **fallback** baseado no nome do arquivo.
-- Quando os dados obrigatórios são encontrados, o PDF é automaticamente renomeado para o padrão `NUM-SIGLA-ANO.pdf`
-  (acréscimos numéricos são incluídos se já existir um arquivo com o mesmo nome).
-- O HTML gerado segue o padrão:
-  ```html
-  <li class="informativo list-group-item col-12 col-md-6 border-end">
-    <a class="page-pdf" href="assets/download/informativos/ANO/NUM-SIGLA-ANO.pdf" title="Veja o informativo da NOME COMPLETO (ANO.SEM)">
-      NUM. SIGLA
-      <span class="badge bg-primary rounded-pill float-end">PDF
-        <!-- SVG -->
-      </span>
-    </a>
-  </li>
-  ```
+## Heurísticas de extração
+- Cabeçalho (`SIGLA – NOME COMPLETO / 2026`) → extrai sigla, nome completo e ano.
+- Linha `N.º 275` (variações `Nº`, `N.`, `N:`) → extrai o número.
+- `1.º semestre` ou `2.º semestre` → extrai o semestre (padrão `1` quando ausente).
+- Caso o número não seja encontrado no PDF, é buscado no final do nome original (`UNISINOS.262.pdf → 262`).
+- Se sigla, nome completo ou ano não forem encontrados no PDF, o arquivo permanece como pendência.
 
-## Dicas
-- Você pode ampliar o dicionário `KNOWN_FULLNAMES` no código para mapear sigla → nome completo.
-- Se quiser um ícone no `.exe`, adicione um `.ico` e use a flag `--icon seuicone.ico` no comando do PyInstaller.
+## Saída HTML
+Cada PDF válido gera um `<li>` exatamente como abaixo:
+```html
+<li class="informativo list-group-item col-12 col-md-6 border-end">
+  <a class="page-pdf" href="assets/download/informativos/ANO/NUM-SIGLA-ANO.pdf" title="Veja o informativo da NOME COMPLETO (ANO.SEM)">
+    NUM. SIGLA
+    <span class="badge bg-primary rounded-pill float-end">PDF
+      <svg aria-labelledby="icon-download-solid" role="img" enable-background="new 0 0 24 24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="svg-8 svg-fill-white mb-1">
+        <path d="m12 16c-.205 0-.401-.084-.543-.232l-5.25-5.5c-.455-.477-.114-1.268.543-1.268h2.75v-1.25c0-4.273 3.477-7.75 7.75-7.75.414 0 .75.336.75.75s-.336.75-.75.75c-1.517 0-2.75 1.233-2.75 2.75v4.75h2.75c.657 0 .998.791.543 1.268l-5.25 5.5c-.142.148-.338.232-.543.232z"></path>
+        <path d="m21 18h-18c-1.654 0-3 1.346-3 3s1.346 3 3 3h18c1.654 0 3-1.346 3-3s-1.346-3-3-3z"></path>
+      </svg>
+    </span>
+  </a>
+</li>
+```
+
+## Interface gráfica (legado)
+O arquivo `app/main.py` mantém a interface gráfica original para uso manual. Ele utiliza as mesmas heurísticas e continua funcionando para cenários simples.
