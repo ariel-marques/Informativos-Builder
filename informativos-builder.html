@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Informativos – Processor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Bootstrap opcional para visual -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- pdf-lib e JSZip -->
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.js"></script>
+    <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.js";
+    </script>
+
+    <style>
+        body {
+            background: #0b0d12;
+            color: #e7e9ee;
+        }
+
+        .card {
+            background: #151923;
+            border: 1px solid #202535;
+        }
+
+        .dropzone {
+            border: 2px dashed #3b82f6;
+            border-radius: 16px;
+            padding: 36px;
+            text-align: center;
+            background: #0f1320;
+        }
+
+        .dropzone.dragover {
+            background: #10162a;
+            border-color: #60a5fa;
+        }
+
+        textarea {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        }
+
+        .code-preview {
+            background: #0f1320;
+            color: #e7e9ee;
+            border: 1px solid #202535;
+        }
+
+        .badge-ok {
+            background: #16a34a;
+        }
+
+        .badge-miss {
+            background: #c2410c;
+        }
+
+        a {
+            color: #93c5fd;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container py-4">
+        <h1 class="h3 mb-4">Processor de Informativos (PDF → Metadados + Lista &lt;li&gt;)</h1>
+
+        <div class="row g-4">
+            <div class="col-12 col-lg-4">
+                <div class="card p-3 text-white">
+                    <h2 class="h5">Config</h2>
+                    <div class="mb-2">
+                        <label class="form-label">Ano da pasta</label>
+                        <input id="yearInput" class="form-control form-control-sm" value="2026">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Período (aparece no title entre parênteses)</label>
+                        <input id="periodInput" class="form-control form-control-sm" value="2026.1">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Base path dos PDFs (href)</label>
+                        <input id="basePathInput" class="form-control form-control-sm" value="assets/download/informativos/">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Autor (metadado)</label>
+                        <input id="authorInput" class="form-control form-control-sm" value="Curso Objetivo - www.curso-objetivo.br">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Palavras-chave (metadado)</label>
+                        <textarea id="keywordsInput" rows="3" class="form-control form-control-sm">informativo, informativo faculdade, informativo universidade, informações vestibular, livros vestibular, o que cai no vestibular, o que cai na prova vestibular</textarea>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Título (metadado)</label>
+                        <input id="titleTpl" class="form-control form-control-sm" value="Informativo - {NOME}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Subject/Descrição (metadado)</label>
+                        <input id="subjectTpl" class="form-control form-control-sm" value="Confira o informativo da {NOME}">
+                    </div>
+                    <button id="downloadAll" class="btn btn-sm btn-primary w-100" disabled>Baixar todos como .zip</button>
+                </div>
+                <div class="card p-3 mt-3 text-white">
+                    <h2 class="h5">Dicionário de nomes completos</h2>
+                    <p class="small mb-2">Edite conforme necessário. A chave é o “código” extraído do arquivo antes do ponto (ex: <code>FECAP.281.pdf</code> → chave: <code>FECAP</code>).</p>
+                    <textarea id="dictArea" rows="12" class="form-control code-preview">
+                        {
+                        "ENEM": "Exame Nacional do Ensino Médio (ENEM)",
+                        "AFA - CPCAR - CFOAV": "Forças Armadas — AFA/EPCAR (CPCAR e CFOAv) (TODO: confirme a redação que usa no site)",
+                        "ESPECEX": "Escola Preparatória de Cadetes do Exército (EsPCEx)",
+                        "AFA - EPCAR - CFOAV": "Forças Armadas — AFA/EPCAR (CFOAv) (TODO: confirme a redação que usa no site)",
+                        "IME": "Instituto Militar de Engenharia (IME)",
+                        "ITA": "Instituto Tecnológico de Aeronáutica (ITA)",
+                        "FASM": "Faculdade Santa Marcelina (FASM)",
+                        "FAMEU - FATRA - MEDICINA": "FAMEU / FATRA — Medicina (TODO: confirme as instituições exatas)",
+                        "UNISUL - MEDICINA": "Universidade do Sul de Santa Catarina (UNISUL) — Medicina",
+                        "SÃO JUDAS - MEDICINA": "Universidade São Judas Tadeu — Medicina",
+                        "UNIBH - MEDICINA": "Centro Universitário de Belo Horizonte (UniBH) — Medicina",
+                        "UNIFUNEC - MEDICINA": "Centro Universitário de Santa Fé do Sul (UNIFUNEC) — Medicina",
+                        "UNIMES - MEDICINA": "Universidade Metropolitana de Santos (UNIMES) — Medicina",
+                        "FMJ - MEDICINA": "Faculdade de Medicina de Jundiaí (FMJ) — Medicina",
+                        "UFPR": "Universidade Federal do Paraná (UFPR)",
+                        "UEA": "Universidade do Estado do Amapá (UEA) (TODO: se for Universidade do Estado do Amapá, OK; se for outra, ajuste)",
+                        "UEA - SIS - SERIADO": "Universidade do Estado do Amazonas (UEA) — Sistema de Ingresso Seriado (SIS)",
+                        "UNICENTRO - PAC": "Universidade Estadual do Centro-Oeste (UNICENTRO) — PAC",
+                        "UEL": "Universidade Estadual de Londrina (UEL)",
+                        "Universidade Anhembi Morumbi - MEDICINA": "Universidade Anhembi Morumbi — Medicina",
+                        "UNILUS - MEDICINA": "Centro Universitário Lusíada (UNILUS) — Medicina",
+                        "UNIP - MEDICINA": "Universidade Paulista (UNIP) — Medicina",
+                        "Santa Casa - MEDICINA": "Faculdade de Ciências Médicas da Santa Casa de São Paulo — Medicina",
+                        "Santa Casa - DEMAIS CURSOS": "Faculdade de Ciências Médicas da Santa Casa de São Paulo — Demais Cursos",
+                        "UFGD": "Universidade Federal da Grande Dourados (UFGD)",
+                        "HUMANITAS - ENEM - MEDICINA": "Faculdade Humanitas — Medicina (ingresso ENEM) (TODO: cidade/campus)",
+                        "UNIFIMES - MEDICINA": "Universidade de Rio Verde (UniRV) — Campus Mineiros (UNIFIMES) — Medicina (TODO: confirme a marcação que usa)",
+                        "UERJ - EXAME DE QUALIFICAÇÃO": "Universidade do Estado do Rio de Janeiro (UERJ) — Exame de Qualificação",
+                        "UENP": "Universidade Estadual do Norte do Paraná (UENP)",
+                        "UNIFAL": "Universidade Federal de Alfenas (UNIFAL-MG)",
+                        "ALBERT EINSTEIN - UNIFICADO": "Faculdade Israelita de Ciências da Saúde Albert Einstein — Processo Unificado",
+                        "UFSM - DEMAIS CURSOS": "Universidade Federal de Santa Maria (UFSM) — Demais Cursos",
+                        "UFG": "Universidade Federal de Goiás (UFG)",
+                        "UNIMAR": "Universidade de Marília (UNIMAR)",
+                        "CLARETIANO FACULDADE - MEDICINA": "Claretiano — Faculdade — Medicina (TODO: confirmar campus)",
+                        "CENTRO UNIVERSITÁRIO BARÃO DE MAUÁ - MEDICINA": "Centro Universitário Barão de Mauá — Medicina",
+                        "UNIFACEF - MEDICINA": "Centro Universitário Municipal de Franca (Uni-FACEF) — Medicina",
+                        "UNIFACEF - DEMAIS CURSOS": "Centro Universitário Municipal de Franca (Uni-FACEF) — Demais Cursos",
+                        "AGES - MEDICINA": "UniAGES — Medicina",
+                        "UNIFG - MEDICINA": "Centro Universitário UniFG — Medicina",
+                        "UNIFACS - MEDICINA": "Universidade Salvador (UNIFACS) — Medicina",
+                        "FEMPAR - MEDICINA": "Faculdade Evangélica Mackenzie do Paraná (FEMPAR) — Medicina",
+                        "UNIEURO - MEDICINA": "Centro Universitário UNIEURO — Medicina",
+                        "UNIMAR - MEDICINA": "Universidade de Marília (UNIMAR) — Medicina",
+                        "UNIFENAS - MEDICINA": "Universidade José do Rosário Vellano (UNIFENAS) — Medicina",
+                        "MULTIVIX - MEDICINA": "Faculdade Multivix — Medicina",
+                        "UNIVEL - MEDICINA": "Centro Universitário de Cascavel (UNIVEL) — Medicina",
+                        "CAMPO REAL - MEDICINA": "Centro Universitário Campo Real — Medicina",
+                        "UNIPAR - MEDICINA": "Universidade Paranaense (UNIPAR) — Medicina",
+                        "FCMMG - MEDICINA": "Faculdade de Ciências Médicas de Minas Gerais (FCMMG) — Medicina",
+                        "FCMMG - DEMAIS CURSOS": "Faculdade de Ciências Médicas de Minas Gerais (FCMMG) — Demais Cursos",
+                        "UNICENTRO": "Universidade Estadual do Centro-Oeste (UNICENTRO)",
+                        "FASEH - MEDICINA": "Faculdade da Saúde e Ecologia Humana (FASEH) — Medicina",
+                        "UFJF": "Universidade Federal de Juiz de Fora (UFJF)",
+                        "UEPG": "Universidade Estadual de Ponta Grossa (UEPG)",
+                        "UTFPR": "Universidade Tecnológica Federal do Paraná (UTFPR)",
+                        "UFPEL": "Universidade Federal de Pelotas (UFPel)",
+                        "FASM - MEDICINA": "Faculdade Santa Marcelina (FASM) — Medicina",
+                        "UNICAMP": "Universidade Estadual de Campinas (UNICAMP)",
+                        "UNIVAS - MEDICINA": "Universidade do Vale do Sapucaí (UNIVAS) — Medicina",
+                        "UNIVAG - MEDICINA": "Centro Universitário de Várzea Grande (UNIVAG) — Medicina",
+                        "UFMG - SERIADO": "Universidade Federal de Minas Gerais (UFMG) — Ingresso Seriado (TODO: confirmar nomenclatura oficial)",
+                        "UFAM - PSI": "Universidade Federal do Amazonas (UFAM) — Processo Seletivo Integrado (PSI)",
+                        "IFMT": "Instituto Federal de Mato Grosso (IFMT)",
+                        "UNP - MEDICINA": "Universidade Potiguar (UNP) — Medicina",
+                        "UEMA - PAES": "Universidade Estadual do Maranhão (UEMA) — PAES",
+                        "UFRR - PSS": "Universidade Federal de Roraima (UFRR) — PSS",
+                        "EMESCAM - MEDICINA": "Escola Superior de Ciências da Santa Casa de Misericórdia de Vitória (EMESCAM) — Medicina",
+                        "FACERES - MEDICINA": "Faculdade Ceres (FACERES) — Medicina",
+                        "UNIFAJ/UNIMAX - MEDICINA": "Grupo UniEduK — UNIFAJ/UNIMAX — Medicina",
+                        "PUC-RIO": "Pontifícia Universidade Católica do Rio de Janeiro (PUC-Rio)",
+                        "FEMA - Medicina": "Fundação Educacional do Município de Assis (FEMA) — Medicina",
+                        "FGV - UNIFICADO": "Fundação Getulio Vargas (FGV) — Processo Unificado",
+                        "UNITAU - MEDICINA": "Universidade de Taubaté (UNITAU) — Medicina",
+                        "IFMG": "Instituto Federal de Minas Gerais (IFMG)",
+                        "UNIFADRA/FUNDEC - MEDICINA": "UNIFADRA / FUNDEC — Medicina (TODO: confirmar nome institucional preferido)",
+                        "HUMANITAS - MEDICINA": "Faculdade Humanitas — Medicina",
+                        "UNIFAI - MEDICINA": "Centro Universitário de Adamantina (UniFAI) — Medicina",
+                        "IFPR": "Instituto Federal do Paraná (IFPR)",
+                        "FAMINAS - BH - MEDICINA UNIFICADO": "FAMINAS-BH — Medicina (Unificado)",
+                        "UESB": "Universidade Estadual do Sudoeste da Bahia (UESB)",
+                        "UVA": "Universidade Estadual do Vale do Acaraú (UVA)",
+                        "UEPG - SERIADO": "Universidade Estadual de Ponta Grossa (UEPG) — Seriado",
+                        "INTELI": "Faculdade INTELI (Instituto de Tecnologia e Liderança)",
+                        "FACULDADE BELA VISTA": "Faculdade Bela Vista",
+                        "UNB": "Universidade de Brasília (UnB)",
+                        "IDEA - MEDICINA": "IDEA — Medicina (TODO: confirmar instituição/cidade)",
+                        "FPP - MEDICINA": "Faculdade Pequeno Príncipe (FPP) — Medicina",
+                        "FACAPE - MEDICINA": "Faculdade de Ciências Aplicadas e Sociais de Petrolina (FACAPE) — Medicina",
+                        "UNIFIP - MEDICINA": "Centro Universitário de Patos (UNIFIP) — Medicina",
+                        "AFYA UNIFICADO - MEDICINA": "AFYA — Educação Unificada — Medicina",
+                        "UNIFACIG - MEDICINA": "Centro Universitário UNIFACIG — Medicina",
+                        "UNIATENAS - MEDICINA": "Centro Universitário Atenas (UniAtenas) — Medicina",
+                        "UEM": "Universidade Estadual de Maringá (UEM)",
+                        "FIAP": "FIAP — Faculdade de Informática e Administração Paulista",
+                        "FAC. SANTA JOANA - ENFERMAGEM": "Faculdade Santa Joana — Enfermagem",
+                        "UNIMONTES": "Universidade Estadual de Montes Claros (Unimontes)",
+                        "FUVEST": "FUVEST — Fundação Universitária para o Vestibular",
+                        "FATEC": "FATEC — Faculdades de Tecnologia do Estado de São Paulo (Centro Paula Souza)",
+                        "UNESC - MEDICINA": "Universidade do Extremo Sul Catarinense (UNESC) — Medicina",
+                        "UNIFESO - MEDICINA": "Centro Universitário Serra dos Órgãos (UNIFESO) — Medicina",
+                        "UNIFAA/CESVA - MEDICINA": "Centro Universitário de Valença (UNIFAA/CESVA) — Medicina",
+                        "FAMESC - MEDICINA": "Faculdade de Medicina Estácio (FAMESC) — Medicina (TODO: confirmar denominação local)",
+                        "UNILAGOS - MEDICINA": "UNILAGOS — Medicina (TODO: confirmar nome institucional completo)",
+                        "UNIARA": "Universidade de Araraquara (UNIARA)",
+                        "UNIARA - MEDICINA": "Universidade de Araraquara (UNIARA) — Medicina",
+                        "SLMANDIC - MEDICINA": "Faculdade São Leopoldo Mandic (SLMANDIC) — Medicina",
+                        "IFF": "Instituto Federal Fluminense (IFF)",
+                        "UNB - PAS": "Universidade de Brasília (UnB) — PAS",
+                        "UNIUBE": "Universidade de Uberaba (UNIUBE)",
+                        "PUC-SP": "Pontifícia Universidade Católica de São Paulo (PUC-SP)",
+                        "FACISB - MEDICINA": "Faculdade de Ciências da Saúde de Barretos Dr. Paulo Prata (FACISB) — Medicina",
+                        "UNESPAR": "Universidade Estadual do Paraná (UNESPAR)",
+                        "UNITINS": "Universidade Estadual do Tocantins (UNITINS)",
+                        "SÃO CAMILO - MEDICINA": "Centro Universitário São Camilo — Medicina",
+                        "UNEMAT": "Universidade do Estado de Mato Grosso (UNEMAT)",
+                        "INSPER": "Insper — Instituto de Ensino e Pesquisa",
+                        "FTT": "Fundação Tuiuti do Paraná (UTP) (TODO: se a sigla FTTP refere à UTP, confirmar)",
+                        "FACAMP": "Faculdades de Campinas (FACAMP)",
+                        "FADI - FAC. DE DIREITO": "FADI — Faculdade de Direito de Sorocaba",
+                        "UCPEL - MEDICINA": "Universidade Católica de Pelotas (UCPel) — Medicina",
+                        "FMP - MEDICINA": "Faculdade de Medicina de Petrópolis (FMP) — Medicina",
+                        "UNESP": "Universidade Estadual Paulista (UNESP)",
+                        "PUC-CAMPINAS - MEDICINA": "Pontifícia Universidade Católica de Campinas (PUC-Campinas) — Medicina",
+                        "PUC-CAMPINAS": "Pontifícia Universidade Católica de Campinas (PUC-Campinas)",
+                        "UNAERP - MEDICINA": "Universidade de Ribeirão Preto (UNAERP) — Medicina",
+                        "UNAERP": "Universidade de Ribeirão Preto (UNAERP)",
+                        "UNASP": "Universidade Paulista (UNASP) (TODO: confirmar campus)",
+                        "ESPM - SP": "ESPM — São Paulo",
+                        "ESPM - RJ": "ESPM — Rio de Janeiro",
+                        "UNESUL BAHIA - MEDICINA": "UNESUL Bahia — Medicina (TODO: confirmar razão social)",
+                        "ZARNS - MEDICINA": "ZARNS — Medicina (TODO: confirmar instituição)",
+                        "INAPÓS - MEDICINA": "INAPÓS — Medicina (TODO: confirmar instituição)",
+                        "INAPÓS - ODONTOLOGIA": "INAPÓS — Odontologia (TODO: confirmar instituição)",
+                        "FAC. BAIANA DE DIREITO": "Faculdade Baiana de Direito",
+                        "IMEPAC - MEDICINA": "UniALFA/IMEPAC — Medicina (TODO: confirmar marca vigente)",
+                        "FMPFM - MEDICINA": "FMP/FASE — Medicina (TODO: confirmar sigla exata usada)",
+                        "UFV - SERIADO": "Universidade Federal de Viçosa (UFV) — Seriado (PDSE/PCD?) (TODO: confirmar)",
+                        "UFRGS": "Universidade Federal do Rio Grande do Sul (UFRGS)",
+                        "UNICERRADO - MEDICINA": "Centro Universitário de Goiatuba (UNICERRADO) — Medicina",
+                        "UNIFATEB - MEDICINA": "Centro Universitário de Telêmaco Borba (UniFateb) — Medicina",
+                        "FARESI - MEDICINA": "FARESI — Medicina (TODO: confirmar instituição)",
+                        "FVS - MEDICINA": "Faculdade Venda Nova do Imigrante (FAVENI/FVS?) — Medicina (TODO: confirmar)",
+                        "FCMSJF - MEDICINA": "Faculdade de Ciências Médicas e da Saúde de Juiz de Fora (sup. Suprema/FCMS/JF) — Medicina (TODO: confirmar)",
+                        "FATEC - MEDICINA": "FATEC — Medicina (TODO: geralmente FATEC não tem Medicina; confirmar)",
+                        "UNICESUMAR - MEDICINA": "UniCesumar — Medicina",
+                        "FAM - MEDICINA": "Faculdade das Américas (FAM) — Medicina",
+                        "UMC - MEDICINA": "Universidade de Mogi das Cruzes (UMC) — Medicina",
+                        "UNIFIPA - MEDICINA": "Centro Universitário Padre Albino (UNIFIPA) — Medicina",
+                        "PUC - GO - MEDICINA": "Pontifícia Universidade Católica de Goiás (PUC-GO) — Medicina",
+                        "UVA - MEDICINA": "Universidade Veiga de Almeida (UVA) — Medicina",
+                        "CESUPA - MEDICINA": "Centro Universitário do Pará (CESUPA) — Medicina",
+                        "INATEL": "Instituto Nacional de Telecomunicações (INATEL)",
+                        "UECE": "Universidade Estadual do Ceará (UECE)",
+                        "FAMERP - MEDICINA / ENFERMAGEM E PSICOLOGIA": "Faculdade de Medicina de São José do Rio Preto (FAMERP) — Medicina/Enfermagem/Psicologia",
+                        "INTEGRADO - MEDICINA": "Centro Universitário Integrado — Medicina",
+                        "FMC - MEDICINA": "Faculdade de Medicina de Campos (FMC) — Medicina",
+                        "FUNORTE - MEDICINA": "Faculdades Integradas do Norte de Minas (FUNORTE) — Medicina",
+                        "UNIFACISA - MEDICINA": "Centro Universitário UNIFACISA — Medicina",
+                        "USS/FAMIPE - MEDICINA": "Universidade Severino Sombra (USS) / FAMIPE — Medicina (TODO: confirmar parceria/nome atual)",
+                        "UDESC": "Universidade do Estado de Santa Catarina (UDESC)",
+                        "UNOESTE - MEDICINA": "Universidade do Oeste Paulista (UNOESTE) — Medicina",
+                        "IBMEC UNIFICADO": "IBMEC — Processo Unificado",
+                        "UNICEPLAC - MEDICINA": "Centro Universitário do Planalto Central Apparecido dos Santos (UNICEPLAC) — Medicina",
+                        "UNISA - MEDICINA": "Universidade Santo Amaro (UNISA) — Medicina",
+                        "FAG - MEDICINA": "Centro Universitário Fundação Assis Gurgacz (FAG) — Medicina",
+                        "FMABC - MEDICINA": "Faculdade de Medicina do ABC (FMABC) — Medicina",
+                        "FUNEPE - MEDICINA": "Fundação Educacional de Penápolis (FUNEPE) — Medicina",
+                        "SÍRIO LIBANÊS - MEDICINA": "Faculdade do Sírio-Libanês — Medicina",
+                        "SÍRIO LIBANÊS": "Faculdade do Sírio-Libanês",
+                        "IDOMED - MEDICINA": "IDOMED — Rede de Escolas de Medicina",
+                        "ASCES/UNITA - MEDICINA": "Centro Universitário Tabosa de Almeida (ASCES-UNITA) — Medicina",
+                        "UCB - MEDICINA": "Universidade Católica de Brasília (UCB) — Medicina",
+                        "ACAFE - MEDICINA": "ACAFE — Sistema ACAFE — Medicina",
+                        "UNIFAGOC - MEDICINA": "Centro Universitário UNIFAGOC — Medicina",
+                        "UIT - MEDICINA": "Universidade de Itaúna (UIT) — Medicina",
+                        "UIT": "Universidade de Itaúna (UIT)",
+                        "UNIFOA - MEDICINA": "Centro Universitário de Volta Redonda (UniFOA) — Medicina",
+                        "UNIG - MEDICINA": "Universidade Iguaçu (UNIG) — Medicina",
+                        "FACMAR - MEDICINA": "FACMAR — Medicina (TODO: confirmar instituição)",
+                        "UNIRG - MEDICINA": "Universidade de Gurupi (UNIRG) — Medicina",
+                        "UNINGÁ - MEDICINA": "Centro Universitário Ingá (UNINGÁ) — Medicina",
+                        "FITS - MEDICINA": "Faculdade Tiradentes (FITS) — Medicina",
+                        "FADIP - MEDICINA": "Faculdade Dinâmica do Vale do Piranga (FADIP) — Medicina",
+                        "UNEC - MEDICINA": "Centro Universitário de Caratinga (UNEC) — Medicina",
+                        "NILTON LINS - MEDICINA": "Universidade Nilton Lins — Medicina",
+                        "UNIPAC - MEDICINA": "Universidade Presidente Antônio Carlos (UNIPAC) — Medicina",
+                        "FAESA - MEDICINA": "Centro Universitário FAESA — Medicina",
+                        "UNICEUMA - MEDICINA": "Centro Universitário do Maranhão (UNICEUMA) — Medicina",
+                        "UERJ - EXAME DISCURSIVO": "Universidade do Estado do Rio de Janeiro (UERJ) — Exame Discursivo",
+                        "INST. MAUÁ": "Instituto Mauá de Tecnologia (IMT)",
+                        "UEG": "Universidade Estadual de Goiás (UEG)",
+                        "UNIFAE - MEDICINA": "Centro Universitário das Faculdades Associadas de Ensino (UNIFAE) — Medicina",
+                        "UFSC - IFSC - IFC - UNIFICADO": "UFSC/IFSC/IFC — Processo Unificado",
+                        "UNIOESTE": "Universidade Estadual do Oeste do Paraná (UNIOESTE)",
+                        "MACKENZIE - HIGIENÓPOLIS": "Universidade Presbiteriana Mackenzie — Campus Higienópolis",
+                        "MACKENZIE - MEDICINA ALPHAVILLE": "Universidade Presbiteriana Mackenzie — Medicina Alphaville",
+                        "CENSUPEG - MEDICINA": "Faculdade Censupeg — Medicina (TODO: confirmar denominação)",
+                        "UNI - RN- MEDICINA": "Centro Universitário do Rio Grande do Norte (UNI-RN) — Medicina",
+                        "UNICID - MEDICINA": "Universidade São Judas Tadeu (antiga UNICID) — Medicina (TODO: confirmar marca atual)",
+                        "UNILAGO - MEDICINA": "Centro Universitário UNILAGO — Medicina",
+                        "UNIFRAN - MEDICINA": "Centro Universitário de Franca (UNIFRAN) — Medicina",
+                        "CEUNSP - MEDICINA": "Centro Universitário Nossa Senhora do Patrocínio (CEUNSP) — Medicina (TODO: confirmar curso)",
+                        "FAPI - PINHAIS - MEDICINA": "Faculdade de Pinhais (FAPI) — Medicina",
+                        "UNIRV-MEDICINA": "UniRV – Universidade Rio Verde",
+                        "UNISINOS-MEDICINA": "Universidade do Vale do Rio dos Sinos",
+                        "UNIRV-MEDICINA": "UniRV – Universidade Rio Verde",
+                        "FSG - MEDICINA": "Centro Universitário da Serra Gaúcha (FSG) — Medicina",
+                        "UNIPÊ - MEDICINA": "Centro Universitário de João Pessoa (UNIPÊ) — Medicina",
+                        "POSITIVO - MEDICINA": "Universidade Positivo — Medicina",
+                        "CESUCA - MEDICINA": "Centro Universitário Cesuca — Medicina",
+                        "UVV - MEDICINA": "Universidade Vila Velha (UVV) — Medicina",
+                        "UNIT - MEDICINA": "Universidade Tiradentes (UNIT) — Medicina",
+                        "FAMENE - MEDICINA": "Faculdade de Medicina Nova Esperança (FAMENE) — Medicina",
+                        "UNIFSM - MEDICINA": "Universidade Federal de Santa Maria (UFSM) — Medicina",
+                        "CESMAC - MEDICINA": "Centro Universitário CESMAC — Medicina",
+                        "UNIEVANGÉLICA - MEDICINA": "Universidade Evangélica de Goiás (UNIEVANGÉLICA) — Medicina",
+                        "FAMP - MEDICINA": "Faculdade Morgana Potrich (FAMP) — Medicina",
+                        "UNIFAN - MEDICINA": "Centro Universitário Alfredo Nasser (UNIFAN) — Medicina",
+                        "FEEVALE - MEDICINA": "Universidade Feevale — Medicina",
+                        "URI - MEDICINA": "Universidade Regional Integrada do Alto Uruguai e das Missões (URI) — Medicina",
+                        "UFMS": "Universidade Federal de Mato Grosso do Sul (UFMS)",
+                        "UFMS - SERIADO": "Universidade Federal de Mato Grosso do Sul (UFMS) — Sistema Seriado",
+                        "USF-MEDICINA": "Universidade São Francisco (USF) — Medicina",
+                        "SÃO CAMILO": "Centro Universitário São Camilo",
+                        "USCS - MEDICINA": "Universidade Municipal de São Caetano do Sul (USCS) — Medicina",
+                        "MACKENZIE - ALPHAVILLE E CAMPINAS": "Universidade Presbiteriana Mackenzie — Alphaville e Campinas",
+                        "UFN - MEDICINA": "Centro Universitário Franciscano (UFN) — Medicina",
+                        "UNICEUB - MEDICINA": "Centro Universitário de Brasília (UniCEUB) — Medicina",
+                        "LIFE UNIC - MEDICINA": "LIFE/UNIC — Medicina (TODO: confirmar denominação)",
+                        "PUC-PR": "Pontifícia Universidade Católica do Paraná (PUC-PR)",
+                        "BARÃO DE MAUÁ": "Centro Universitário Barão de Mauá",
+                        "UNEB": "Universidade do Estado da Bahia (UNEB)",
+                        "PUC-MG": "Pontifícia Universidade Católica de Minas Gerais (PUC Minas)",
+                        "IED": "Istituto Europeo di Design (IED)",
+                        "FAC. DIREITO SBC": "Faculdade de Direito de São Bernardo do Campo",
+                        "UNDB - MEDICINA": "Centro Universitário UNDB — Medicina",
+                        "PUC-PR - MEDICINA": "Pontifícia Universidade Católica do Paraná (PUC-PR) — Medicina",
+                        "FMABC - Demais Cursos": "Faculdade de Medicina do ABC (FMABC) — Demais Cursos",
+                        "ESCOLA DA CIDADE": "Escola da Cidade — Faculdade de Arquitetura e Urbanismo",
+                        "PUG-MG - MEDICINA": "Pontifícia Universidade Católica de Minas Gerais (PUC Minas) — Medicina",
+                        "IFSudesteMG": "Instituto Federal do Sudeste de Minas Gerais (IF Sudeste MG)",
+                        "URI": "Universidade Regional Integrada do Alto Uruguai e das Missões (URI)",
+                        "SENAC": "Centro Universitário SENAC",
+                        "CEDERJ": "Fundação CECIERJ / Consórcio CEDERJ",
+                        "UNIVERTIX": "Centro Universitário UNIVERTIX",
+                        "ULBRA - MEDICINA": "Universidade Luterana do Brasil (ULBRA) — Medicina",
+                        "ULBRA": "Universidade Luterana do Brasil (ULBRA)",
+                        "UMC": "Universidade de Mogi das Cruzes (UMC)",
+                        "SENAI - SP": "SENAI São Paulo",
+                        "UNINORTE - MEDICINA": "Centro Universitário do Norte (UNINORTE) — Medicina",
+                        "FAME - MEDICINA": "Faculdade da Amazônia (FAMA/FAME) — Medicina (TODO: confirmar razão social correta)",
+                        "UNINTA - MEDICINA": "Centro Universitário INTA (UNINTA) — Medicina",
+                        "UNISC - MEDICINA": "Universidade de Santa Cruz do Sul (UNISC) — Medicina",
+                        "PUC - GO": "Pontifícia Universidade Católica de Goiás (PUC-GO)",
+                        "ATITUS - MEDICINA": "Centro Universitário ATITUS — Medicina",
+                        "FACENE/FAMENE - MEDICINA": "FACENE/FAMENE — Medicina",
+                        "UNIFOR - MEDICINA": "Universidade de Fortaleza (UNIFOR) — Medicina",
+                        "UEMS": "Universidade Estadual de Mato Grosso do Sul (UEMS)",
+                        "IFSulMG": "Instituto Federal do Sul de Minas Gerais (IFSulMG)",
+                        "UNISALESIANO - MEDICINA": "Centro Universitário Católico Salesiano Auxilium (UNISALESIANO) — Medicina",
+                        "KROTON MEDICINA UNIFICADO": "Kroton — Medicina Unificado",
+                        "UNISINOS": "Universidade do Vale do Rio dos Sinos (UNISINOS)",
+                        "UNILUS": "Centro Universitário Lusíada (UNILUS)",
+                        "ANHEMBI MORUMBI": "Universidade Anhembi Morumbi",
+                        "BELAS ARTES": "Centro Universitário Belas Artes de São Paulo",
+                        "IFPI": "Instituto Federal do Piauí (IFPI)",
+                        "IFRS": "Instituto Federal de São Paulo (IFSP)",
+                        "PUCRS": "Pontifícia Universidade Católica do Rio Grande do Sul (PUCRS)",
+                        "PUCRS - MEDICINA": "Pontifícia Universidade Católica do Rio Grande do Sul (PUCRS) — Medicina",
+                        "FAMETRO - MEDICINA": "Centro Universitário Fametro — Medicina",
+                        "UNICHRISTUS - MEDICINA": "Centro Universitário Christus (UNICHRISTUS) — Medicina",
+                        "UNICHRISTUS - DEMAIS CURSOS": "Centro Universitário Christus (UNICHRISTUS) — Demais Cursos",
+                        "FAMEMA - MEDICINA - ENF": "Faculdade de Medicina de Marília (FAMEMA) — Medicina/Enfermagem",
+                        "UNICAMP-ENEM": "Universidade Estadual de Campinas (UNICAMP) — Ingresso via ENEM",
+                        "FASM ": "Faculdade Santa Marcelina (FASM)",
+                        "FEI": "Faculdade de Engenharia de Ilha Solteira (FEIS/UNESP?) (TODO: confirmar denominação)",
+                        "IFTM": "Instituto Federal do Triângulo Mineiro (IFTM)",
+                        "IFNMG": "Instituto Federal do Norte de Minas Gerais (IFNMG)",
+                        "FAAP": "Fundação Armando Alvares Penteado (FAAP)",
+                        "PUC - RS CIÊNCIAS CONTÁBEIS": "Pontifícia Universidade Católica do Rio Grande do Sul (PUCRS) — Ciências Contábeis",
+                        "FECAP": "Fundação Escola de Comércio Álvares Penteado (FECAP)",
+                        "METODISTA": "Universidade Metodista de São Paulo (Metodista)",
+                        "UENF - EAD": "Universidade Estadual do Norte Fluminense (UENF) — EAD",
+                        "UPE": "Universidade de Pernambuco (UPE)",
+                        "UERR": "Universidade Estadual de Roraima (UERR)",
+                        "UFT": "Universidade Federal do Tocantins (UFT)",
+                        "UFVJM - TRIENIO": "Universidade Federal dos Vales do Jequitinhonha e Mucuri (UFVJM) — Triênio",
+                        "UEPA": "Universidade do Estado do Pará (UEPA)",
+                        "IFTO": "Instituto Federal do Tocantins (IFTO)",
+                        "IFPE": "Instituto Federal de Pernambuco (IFPE)",
+                        "IFRR": "Instituto Federal de Roraima (IFRR)",
+                        "UCS": "Universidade de Caxias do Sul (UCS)",
+                        "UCS-MEDICINA": "Universidade de Caxias do Sul (UCS) - Medicina",
+                        "UCSAL": "Universidade Católica do Salvador (UCSAL)",
+                        "URCA": "Universidade Regional do Cariri (URCA)",
+                        "UPF": "Universidade de Passo Fundo (UPF)",
+                        "UPF - MEDICINA": "Universidade de Passo Fundo (UPF) — Medicina",
+                        "UNISANTA": "Universidade Santa Cecília (UNISANTA)",
+                        "FDSBC - DIREITO": "Faculdade de Direito de São Bernardo do Campo (FDSBC)",
+                        "ESPM - PORTO ALEGRE": "ESPM — Porto Alegre",
+                        "UNISANTOS": "Universidade Católica de Santos (UniSantos)",
+                        "NEWTON PAIVA": "Centro Universitário Newton Paiva",
+                        "BAHIANA": "Escola Bahiana de Medicina e Saúde Pública",
+                        "BAHIANA - MEDICINA": "Escola Bahiana de Medicina e Saúde Pública — Medicina",
+                        "UNIDERP - MEDICINA": "Universidade Anhanguera-Uniderp — Medicina",
+                        "FESP-SP": "Fundação Escola de Sociologia e Política de São Paulo (FESPSP)",
+                        "EPD - ESCOLA PAULISTA DE DIREITO": "EPD — Escola Paulista de Direito",
+                        "UNIRIO - THE": "Universidade Federal do Estado do Rio de Janeiro (UNIRIO) — THE",
+                        "UFRJ - TCE": "Universidade Federal do Rio de Janeiro (UFRJ) — TCE",
+                        "UFRJ - THE - 2020": "Universidade Federal do Rio de Janeiro (UFRJ) — THE 2020",
+                        "UFJF - THE": "Universidade Federal de Juiz de Fora (UFJF) — THE",
+                        "UFJF - TRIÊNIO 2021": "Universidade Federal de Juiz de Fora (UFJF) — Triênio 2021",
+                        "UFS - LETRAS - MUSICA": "Universidade Federal de Sergipe (UFS) — Letras/Música",
+                        "UFSCar - LIC - MUSICA": "Universidade Federal de São Carlos (UFSCar) — Licenciatura em Música",
+                        "UFSCAR - INDIGENAS": "Universidade Federal de São Carlos (UFSCar) — Indígenas",
+                        "FPS - MEDICINA": "Faculdade Pernanbucana de Saúde (FPS) — Medicina",
+                        "FPS-DEMAIS CURSOS": "Faculdade Pernanbucana de Saúde — Demais Cursos (FPS)",
+                        "FIMCA-MEDICINA": "Faculdades Integradas Aparício Carvalho (FIMCA) — Medicina",
+                        "UNIFESP-MEDICINA SISTEMA MISTO": "Universidade Federal de São Paulo (UNIFESP) — Medicina",
+                        "FAC. DIREITO 8 DE JULHO": "Faculdade de Direito 8 de Julho"
+                        }
+
+                    </textarea>
+                    <button id="applyDict" class="btn btn-sm btn-outline-light mt-2">Aplicar dicionário</button>
+                </div>
+            </div>
+
+            <div class="col-12 col-lg-8">
+                <div class="card p-3 mb-3 text-white">
+                    <h2 class="h5 mb-2">Arraste e solte os PDFs aqui</h2>
+                    <div id="drop" class="dropzone">Drop PDFs ou clique para selecionar</div>
+                    <input id="fileInput" type="file" accept="application/pdf" multiple hidden>
+                    <div class="mt-3">
+                        <button id="processBtn" class="btn btn-success" disabled>Processar PDFs</button>
+                    </div>
+                </div>
+
+                <div class="card p-3 mb-3 text-white">
+                    <h2 class="h5 mb-2">Arquivos</h2>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle text-light">
+                            <thead>
+                                <tr>
+                                    <th>Arquivo</th>
+                                    <th>Código</th>
+                                    <th>Nº</th>
+                                    <th>Nome completo</th>
+                                    <th>Status</th>
+                                    <th>Baixar</th>
+                                </tr>
+                            </thead>
+                            <tbody id="filesTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card p-3 text-white">
+                    <h2 class="h5 mb-2">HTML &lt;li&gt; gerado</h2>
+                    <textarea id="htmlOut" class="form-control code-preview" rows="12" readonly></textarea>
+                    <div class="d-flex gap-2 mt-2">
+                        <button id="copyHtml" class="btn btn-sm btn-outline-primary">Copiar HTML</button>
+                        <button id="clearAll" class="btn btn-sm btn-outline-warning">Limpar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const $ = sel => document.querySelector(sel);
+        const drop = $('#drop');
+        const fileInput = $('#fileInput');
+        const processBtn = $('#processBtn');
+        const filesTbody = $('#filesTbody');
+        const htmlOut = $('#htmlOut');
+        const downloadAllBtn = $('#downloadAll');
+        const applyDictBtn = $('#applyDict');
+        const dictArea = $('#dictArea');
+
+        let dict = {};
+        let queue = []; // {file, code, num, niceName, blobOut?, filenameOut?, ok?, error?}
+
+        const svgIcon = `
+<svg aria-labelledby="icon-download-solid" role="img" enable-background="new 0 0 24 24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="svg-8 svg-fill-white mb-1">
+  <path d="m12 16c-.205 0-.401-.084-.543-.232l-5.25-5.5c-.455-.477-.114-1.268.543-1.268h2.75v-1.25c0-4.273 3.477-7.75 7.75-7.75.414 0 .75.336.75.75s-.336.75-.75.75c-1.517 0-2.75 1.233-2.75 2.75v4.75h2.75c.657 0 .998.791.543 1.268l-5.25 5.5c-.142.148-.338.232-.543.232z"></path>
+  <path d="m21 18h-18c-1.654 0-3 1.346-3 3s1.346 3 3 3h18c1.654 0 3-1.346 3-3s-1.346-3-3-3z"></path>
+</svg>`.trim();
+
+        function toast(msg) { console.log(msg); }
+
+        // -----------------------
+        // DICIONÁRIO (opcional)
+        // -----------------------
+        function parseDict() {
+            try {
+                dict = JSON.parse(dictArea.value);
+                toast('Dicionário aplicado.');
+            } catch (e) {
+                alert('JSON do dicionário inválido.');
+            }
+        }
+        if (applyDictBtn) {
+            applyDictBtn.addEventListener('click', parseDict);
+            // Se existir dictArea, tenta carregar, senão segue vazio
+            if (dictArea) parseDict();
+        }
+
+        // -----------------------
+        // SLUG para nome de arquivo
+        // -----------------------
+        function slugUpper(s) {
+            const map = {
+                'Á': 'A', 'Â': 'A', 'Ã': 'A', 'À': 'A', 'Ä': 'A', 'É': 'E', 'Ê': 'E', 'È': 'E', 'Ë': 'E',
+                'Í': 'I', 'Î': 'I', 'Ì': 'I', 'Ï': 'I', 'Ó': 'O', 'Ô': 'O', 'Õ': 'O', 'Ò': 'O', 'Ö': 'O',
+                'Ú': 'U', 'Û': 'U', 'Ù': 'U', 'Ü': 'U', 'Ç': 'C',
+                'á': 'A', 'â': 'A', 'ã': 'A', 'à': 'A', 'ä': 'A', 'é': 'E', 'ê': 'E', 'è': 'E', 'ë': 'E',
+                'í': 'I', 'î': 'I', 'ì': 'I', 'ï': 'I', 'ó': 'O', 'ô': 'O', 'õ': 'O', 'ò': 'O', 'ö': 'O',
+                'ú': 'U', 'û': 'U', 'ù': 'U', 'ü': 'U', 'ç': 'C'
+            };
+            let out = '';
+            for (const ch of s) out += map[ch] ?? ch;
+            return out
+                .replace(/[^\w/ .-]/g, '-') // caracteres estranhos → '-'
+                .replace(/[./\s]+/g, '-')   // espaço, ponto e barra → '-'
+                .replace(/-+/g, '-')        // colapsa múltiplos
+                .replace(/^-|-$/g, '');     // trim
+        }
+
+        // -----------------------
+        // NOME DO ARQUIVO → code/num
+        // -----------------------
+        function extractCodeAndNum(fileName) {
+            const base = fileName.replace(/\.pdf$/i, '');
+            const m = base.match(/^(.*)\.(\d{1,4})$/);
+            if (!m) return { code: base, num: '' };
+            return { code: m[1], num: m[2] };
+        }
+
+        // -----------------------
+        // TABELA
+        // -----------------------
+        function rowHtml(entry, idx) {
+            const miss = entry.niceNameMissing;
+            return `
+      <tr>
+        <td class="small">${entry.file.name}</td>
+        <td class="small"><code>${entry.code}</code></td>
+        <td class="small text-center">${entry.num || '-'}</td>
+        <td class="small">
+          <input class="form-control form-control-sm" data-idx="${idx}" data-field="niceName"
+                 value="${entry.niceName || ''}" placeholder="Nome completo (title)">
+        </td>
+        <td class="small">
+          ${entry.ok ? '<span class="badge badge-ok">OK</span>' :
+                    entry.error ? '<span class="badge bg-danger">Erro</span>' :
+                        miss ? '<span class="badge badge-miss">Falta nome</span>' :
+                            '<span class="badge bg-secondary">Pendente</span>'}
+        </td>
+        <td class="small">
+          ${entry.blobOut ? `<a class="btn btn-sm btn-outline-light" download="${entry.filenameOut}" href="${URL.createObjectURL(entry.blobOut)}">PDF</a>` : ''}
+        </td>
+      </tr>
+    `;
+        }
+
+        function refreshTable() {
+            filesTbody.innerHTML = queue.map((e, i) => rowHtml(e, i)).join('');
+            filesTbody.querySelectorAll('input[data-field="niceName"]').forEach(inp => {
+                inp.addEventListener('input', () => {
+                    const i = +inp.dataset.idx;
+                    queue[i].niceName = inp.value.trim();
+                    queue[i].niceNameMissing = !queue[i].niceName;
+                });
+            });
+        }
+
+        // -----------------------
+        // EXTRAÇÃO (PDF.js)
+        // -----------------------
+        async function extractTextWithPDFjs(file, maxPages = 2) {
+            const buf = await file.arrayBuffer();
+            const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+            let out = '';
+            const pages = Math.min(doc.numPages, maxPages);
+            for (let p = 1; p <= pages; p++) {
+                const page = await doc.getPage(p);
+                const content = await page.getTextContent();
+                const strings = content.items.map(it => it.str);
+                // mantém quebras de linha para facilitar regex multi-linha
+                out += strings.join('\n') + '\n';
+            }
+            return out;
+        }
+
+        function parseInstitutionInfo(fullText) {
+            const text = String(fullText || '').replace(/\u00A0/g, ' ').trim();
+
+            // 1) Nº (ex.: "N.º 278")
+            const numMatch = text.match(/N\.º\s*(\d{1,4})/i);
+            const num = numMatch ? numMatch[1] : '';
+
+            // 2) Tentativa direta de cabeçalho: "CODE – NOME / 20xx"
+            const headerRegex = /^([A-Z0-9 .\/-]+?)\s+[–-]\s+(.+?)\/\s*20\d{2}/m;
+            const h = text.match(headerRegex);
+            if (h) {
+                let code = (h[1] || '').trim().replace(/\s+/g, ' ');
+                let niceName = (h[2] || '').trim().replace(/\s+/g, ' ');
+                return { code, niceName, num };
+            }
+
+            // 3) Fallback: coletar candidatas institucionais (linhas em CAPS com palavras-chave)
+            const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+            // Junta linhas quebradas curtas que pertencem à mesma frase institucional
+            const merged = [];
+            for (let i = 0; i < lines.length; i++) {
+                let L = lines[i];
+                if (/[,;:-]$/.test(L) && i + 1 < lines.length) {
+                    L = L + ' ' + lines[i + 1];
+                    i++;
+                }
+                merged.push(L);
+            }
+
+            const keyRe = /^(UNIVERSIDADE|INSTITUTO|CENTRO UNIVERSIT[ÁA]RIO|FACULDADE|PONTIF[IÍ]CIA|ESCOLA|FUNDA[ÇC][ÃA]O|FACULDADES)\b/i;
+            const candidates = merged
+                .filter(l => keyRe.test(l) && l.length >= 20) // evita linhas curtas
+                .map(l => l.replace(/\s+/g, ' '));
+
+            // 3.1 Heurística especial IF (pega IF + região)
+            let ifCandidate = merged.find(l => /INSTITUTO FEDERAL/i.test(l));
+            if (!ifCandidate) {
+                // às vezes vem quebrado em duas linhas; tenta concatenar
+                for (let i = 0; i < merged.length - 1; i++) {
+                    const duo = (merged[i] + ' ' + merged[i + 1]).replace(/\s+/g, ' ');
+                    if (/INSTITUTO FEDERAL/i.test(duo)) { ifCandidate = duo; break; }
+                }
+            }
+            if (ifCandidate) {
+                // tenta achar a região (ex.: TRIÂNGULO MINEIRO)
+                const regionMatch = ifCandidate.match(/TRI[ÂA]NGULO MINEIRO|SUL DE MINAS|NORTE DE MINAS|SUDESTE DE MINAS|DE MINAS|DE GOI[ÁA]S|DE S[ÃA]O PAULO|DO AMAZONAS|DO PAR[ÁA]/i);
+                let region = regionMatch ? regionMatch[0] : '';
+                // nome canônico do IF (completa a parte de Educação, Ciência e Tecnologia)
+                const niceNameIF = region
+                    ? `Instituto Federal de Educação, Ciência e Tecnologia do ${region.replace(/^DE |DO /i, '')}`
+                    : `Instituto Federal de Educação, Ciência e Tecnologia`;
+                return { code: '', niceName: niceNameIF, num };
+            }
+
+            // 3.2 Scoring simples para escolher a melhor candidata
+            let best = '';
+            let bestScore = -1;
+            for (const c of candidates) {
+                let score = 0;
+                if (/UNIVERSIDADE/i.test(c)) score += 3;
+                if (/INSTITUTO/i.test(c)) score += 3;
+                if (/CENTRO UNIVERSIT[ÁA]RIO/i.test(c)) score += 3;
+                if (/FACULDADE|FACULDADES/i.test(c)) score += 2;
+                if (/PONTIF[IÍ]CIA/i.test(c)) score += 1;
+                // favorece linhas mais longas (até um limite)
+                score += Math.min(c.length / 20, 5);
+                if (score > bestScore) { bestScore = score; best = c; }
+            }
+
+            // Se achou candidata, devolve; o "code" será resolvido por fallback (nome do arquivo)
+            if (best) {
+                return { code: '', niceName: best, num };
+            }
+
+            // 4) Sem sucesso: devolve só o número; code/niceName serão preenchidos por fallback externo
+            return { code: '', niceName: '', num };
+        }
+
+        // Cria uma entrada completa a partir do arquivo
+        async function handleOneFile(file) {
+            if (!/\.pdf$/i.test(file.name)) return null;
+
+            let extracted = { code: '', niceName: '', num: '' };
+            try {
+            const fullText = await extractTextWithPDFjs(file);
+            extracted = parseInstitutionInfo(fullText);
+            } catch (e) {
+            console.warn('Falha na extração com PDF.js:', e);
+            }
+
+            // fallback nº pelo nome (CODIGO.NUM.pdf)
+            if (!extracted.num) {
+            const base = file.name.replace(/\.pdf$/i, '');
+            const m = base.match(/^(.*)\.(\d{1,4})$/);
+            if (m) extracted.num = m[2];
+            }
+
+            // code: preferir o do PDF; senão, usar parte antes do ponto
+            let code = extracted.code;
+            if (!code) {
+            const base = file.name.replace(/\.pdf$/i, '');
+            const m = base.match(/^(.*)\.(\d{1,4})$/);
+            code = m ? m[1] : base;
+            }
+            code = code.replace(/\s+/g, ' ').replace(/\s-\s/g, ' - ').trim();
+
+            // niceName extraído; se vazio, mantém editável (ou usa dict se quiser fallback)
+            let niceName = extracted.niceName || '';
+            if (!niceName && dict && dict[code]) {
+            niceName = dict[code];
+            }
+
+            console.log({ code, num: extracted.num, niceName });
+
+            return {
+            file,
+            code,
+            num: extracted.num || '',
+            niceName,
+            niceNameMissing: !niceName,
+            ok: false
+            };
+        }
+
+
+        // -----------------------
+        // DROP / INPUT
+        // -----------------------
+        drop.addEventListener('click', () => fileInput.click());
+
+        async function handleFiles(files) {
+            for (const file of files) {
+                const entry = await handleOneFile(file);
+                if (entry) queue.push(entry);
+            }
+            refreshTable();
+            processBtn.disabled = queue.length === 0;
+        }
+
+        fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+        ['dragenter', 'dragover'].forEach(evt => {
+            drop.addEventListener(evt, e => {
+                e.preventDefault(); e.stopPropagation(); drop.classList.add('dragover');
+            });
+        });
+        ['dragleave', 'drop'].forEach(evt => {
+            drop.addEventListener(evt, e => {
+                e.preventDefault(); e.stopPropagation(); drop.classList.remove('dragover');
+            });
+        });
+        drop.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+
+        // -----------------------
+        // PROCESSAMENTO / METADADOS
+        // -----------------------
+        async function processOne(entry, cfg) {
+            if (!entry.niceName) { entry.error = 'Nome completo ausente.'; return; }
+            if (!entry.num) { entry.error = 'Número ausente no PDF ou nome do arquivo.'; return; }
+
+            const arrayBuf = await entry.file.arrayBuffer();
+            const pdfDoc = await PDFLib.PDFDocument.load(arrayBuf);
+
+            // metadados
+            const title = cfg.titleTpl.replace('{NOME}', entry.niceName);
+            const subject = cfg.subjectTpl.replace('{NOME}', entry.niceName);
+            pdfDoc.setTitle(title, { showInWindowTitleBar: false });
+            pdfDoc.setAuthor(cfg.author);
+            pdfDoc.setSubject(subject);
+            pdfDoc.setKeywords(cfg.keywords.split(',').map(s => s.trim()).filter(Boolean));
+
+            // grava
+            const bytes = await pdfDoc.save();
+            const blob = new Blob([bytes], { type: 'application/pdf' });
+
+            // renomeio com padrão: NNN-CODESLUG-YYYY.pdf
+            const slug = slugUpper(entry.code.toUpperCase());
+            const filenameOut = `${entry.num}-${slug}-${cfg.year}.pdf`;
+
+            entry.blobOut = blob;
+            entry.filenameOut = filenameOut;
+            entry.ok = true;
+        }
+
+        function buildLi(entry, cfg) {
+            // href: basePath/year/NNN-SLUG-YEAR.pdf
+            const href = `${cfg.basePath.replace(/\/$/, '')}/${cfg.year}/${entry.filenameOut}`;
+            const title = `Veja o informativo da ${entry.niceName} (${cfg.period})`;
+            // texto visível: "NNN. CODE" (com hífens bonitinhos)
+            const visible = `${entry.num}. ${entry.code.replace(/-/g, ' - ')}`;
+            return `
+<li class="informativo list-group-item col-12 col-md-6 border-end">
+  <a class="page-pdf" href="${href}" title="${title}">
+    ${visible}
+    <span class="badge bg-primary rounded-pill float-end">PDF
+      ${svgIcon}
+    </span>
+  </a>
+</li>`.trim();
+        }
+
+        processBtn.addEventListener('click', async () => {
+            const cfg = {
+                year: $('#yearInput').value.trim(),
+                period: $('#periodInput').value.trim(),
+                basePath: $('#basePathInput').value.trim(),
+                author: $('#authorInput').value.trim(),
+                keywords: $('#keywordsInput').value.trim(),
+                titleTpl: $('#titleTpl').value.trim(),
+                subjectTpl: $('#subjectTpl').value.trim(),
+            };
+
+            // valida preenchimento de nomes
+            let missing = queue.filter(e => !e.niceName || !e.num);
+            if (missing.length) {
+                alert('Preencha os nomes completos e garanta que o PDF contenha "N.º ###" ou o arquivo siga "CODIGO.NUMERO.pdf".');
+                return;
+            }
+
+            // process
+            for (const e of queue) {
+                try {
+                    await processOne(e, cfg);
+                } catch (err) {
+                    console.error(err);
+                    e.error = 'Falha ao processar PDF';
+                }
+            }
+            refreshTable();
+
+            // gera HTML
+            const listHtml = queue.filter(e => e.ok).map(e => buildLi(e, cfg)).join('\n\n');
+            htmlOut.value = listHtml;
+
+            // habilita zip
+            downloadAllBtn.disabled = queue.every(e => !e.ok);
+        });
+
+        downloadAllBtn.addEventListener('click', async () => {
+            const zip = new JSZip();
+            for (const e of queue) {
+                if (e.ok && e.blobOut) {
+                    zip.file(e.filenameOut, e.blobOut);
+                }
+            }
+            const blob = await zip.generateAsync({ type: 'blob' });
+            const a = document.createElement('a');
+            a.download = 'informativos-processados.zip';
+            a.href = URL.createObjectURL(blob);
+            a.click();
+        });
+
+        $('#copyHtml').addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(htmlOut.value);
+                toast('HTML copiado');
+            } catch { }
+        });
+
+        $('#clearAll').addEventListener('click', () => {
+            queue = [];
+            refreshTable();
+            htmlOut.value = '';
+            processBtn.disabled = true;
+            downloadAllBtn.disabled = true;
+        });
+    </script>
+
+</body>
+
+</html>

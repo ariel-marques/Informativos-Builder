@@ -1,1 +1,0 @@
-"""Informativos Builder application package."""
