@@ -587,8 +587,15 @@
         // -----------------------
         // EXTRAÇÃO (PDF.js)
         // -----------------------
-        async function extractTextWithPDFjs(file, maxPages = 2) {
-            const buf = await file.arrayBuffer();
+        async function extractTextWithPDFjs(input, maxPages = 2) {
+            let buf;
+            if (input instanceof ArrayBuffer) {
+                buf = input;
+            } else if (input && typeof input.arrayBuffer === 'function') {
+                buf = await input.arrayBuffer();
+            } else {
+                throw new Error('Entrada inválida para extração de texto');
+            }
             const doc = await pdfjsLib.getDocument({ data: buf }).promise;
             let out = '';
             const pages = Math.min(doc.numPages, maxPages);
@@ -600,6 +607,116 @@
                 out += strings.join('\n') + '\n';
             }
             return out;
+        }
+
+        async function extractHeadingsFromPdf(arrayBuf, maxPages = 3) {
+            const doc = await pdfjsLib.getDocument({ data: arrayBuf }).promise;
+            const roleToTag = {
+                Document: 'div',
+                Part: 'section',
+                Sect: 'section',
+                Div: 'div',
+                P: 'p',
+                Span: 'span',
+                H1: 'h1',
+                H2: 'h2',
+                H3: 'h3',
+                H4: 'h4',
+                H5: 'h5',
+                H6: 'h6',
+                Caption: 'figcaption',
+                L: 'ul',
+                LI: 'li'
+            };
+
+            const escapeHtml = str => String(str ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+
+            const parser = new DOMParser();
+            let niceName = '';
+            let informativoNum = '';
+
+            const pages = Math.min(doc.numPages, maxPages);
+            for (let p = 1; p <= pages; p++) {
+                if (niceName && informativoNum) break;
+                const page = await doc.getPage(p);
+                let structTree;
+                try {
+                    structTree = await page.getStructTree();
+                } catch (err) {
+                    console.warn('Estrutura semântica indisponível na página', p, err);
+                    continue;
+                }
+                if (!structTree) continue;
+
+                const textContent = await page.getTextContent({ includeMarkedContent: true });
+                const mcidMap = new Map();
+                for (const item of textContent.items) {
+                    if (item && typeof item.markedContentId === 'number' && item.markedContentId >= 0) {
+                        const segments = mcidMap.get(item.markedContentId) || [];
+                        segments.push(item.str || '');
+                        mcidMap.set(item.markedContentId, segments);
+                    }
+                }
+
+                const textForId = id => {
+                    const segments = mcidMap.get(id);
+                    if (!segments || !segments.length) return '';
+                    return segments.join(' ').replace(/\s+/g, ' ').trim();
+                };
+
+                const nodeToHtml = node => {
+                    if (!node) return '';
+                    const children = Array.isArray(node.children) ? node.children : [];
+                    const inner = children.map(child => {
+                        if (!child) return '';
+                        if (child.type === 'content' && typeof child.id === 'number') {
+                            return escapeHtml(textForId(child.id));
+                        }
+                        if (child.children) {
+                            return nodeToHtml(child);
+                        }
+                        return '';
+                    }).join('');
+
+                    const tag = roleToTag[node.role] || 'div';
+                    return `<${tag}>${inner}</${tag}>`;
+                };
+
+                const html = nodeToHtml(structTree);
+                if (!html) continue;
+
+                const docHtml = parser.parseFromString(`<div>${html}</div>`, 'text/html');
+                if (!niceName) {
+                    const h1 = docHtml.querySelector('h1');
+                    if (h1 && h1.textContent) {
+                        const text = h1.textContent.replace(/\s+/g, ' ').trim();
+                        if (text) niceName = text;
+                    }
+                }
+                if (!informativoNum) {
+                    const h3 = docHtml.querySelector('h3');
+                    if (h3 && h3.textContent) {
+                        const text = h3.textContent.replace(/\s+/g, ' ').trim();
+                        const match = text.match(/N\.?º\s*(\d{1,4})/i) || text.match(/N\.?o\s*(\d{1,4})/i);
+                        if (match) {
+                            informativoNum = match[1];
+                        } else {
+                            const fallback = text.match(/\b(\d{1,4})\b/);
+                            if (fallback) informativoNum = fallback[1];
+                        }
+                    }
+                }
+            }
+
+            return {
+                niceName,
+                num: informativoNum
+            };
         }
 
         const lowerCaseWords = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'em', 'para', 'por', 'per', 'del', 'della', 'du', 'des', 'di']);
@@ -776,10 +893,27 @@
         async function handleOneFile(file) {
             if (!/\.pdf$/i.test(file.name)) return null;
 
+            const arrayBuf = await file.arrayBuffer();
             let extracted = { code: '', niceName: '', num: '' };
+
             try {
-                const fullText = await extractTextWithPDFjs(file);
-                extracted = parseInstitutionInfo(fullText);
+                const headingInfo = await extractHeadingsFromPdf(arrayBuf);
+                extracted.niceName = headingInfo.niceName || '';
+                extracted.num = headingInfo.num || '';
+            } catch (err) {
+                console.warn('Falha na extração de headings:', err);
+            }
+
+            try {
+                const fullText = await extractTextWithPDFjs(arrayBuf);
+                const parsed = parseInstitutionInfo(fullText);
+                extracted.code = parsed.code || extracted.code;
+                if (!extracted.niceName && parsed.niceName) {
+                    extracted.niceName = parsed.niceName;
+                }
+                if (!extracted.num && parsed.num) {
+                    extracted.num = parsed.num;
+                }
             } catch (e) {
                 console.warn('Falha na extração com PDF.js:', e);
             }
