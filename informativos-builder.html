@@ -653,26 +653,67 @@
                 return { code, niceName, num };
             }
 
-            // 3) Procura nas primeiras linhas por um nome completo
-            const headerCandidates = [];
-            for (let i = 0; i < headerBlock.length; i++) {
-                let line = headerBlock[i];
-                if (/^INFORMATIVO/i.test(line)) continue;
-                if (!keyRe.test(line) && i + 1 < headerBlock.length) {
-                    const merged = `${line} ${headerBlock[i + 1]}`.replace(/\s+/g, ' ');
-                    if (keyRe.test(merged)) {
-                        headerCandidates.push(merged);
-                        i++;
-                        continue;
-                    }
+            const seenCandidates = new Set();
+            const candidates = [];
+            const candidateBonuses = new Map();
+
+            function addCandidate(raw, bonus = 0) {
+                if (!raw) return;
+                const normalized = raw.replace(/\s+/g, ' ').trim();
+                if (!normalized) return;
+                const key = normalized.toLowerCase();
+                if (!seenCandidates.has(key)) {
+                    seenCandidates.add(key);
+                    candidates.push(normalized);
                 }
-                if (keyRe.test(line)) {
-                    headerCandidates.push(line.replace(/\s+/g, ' '));
+                if (bonus) {
+                    const current = candidateBonuses.get(normalized) || 0;
+                    if (bonus > current) candidateBonuses.set(normalized, bonus);
                 }
             }
-            if (headerCandidates.length) {
-                const niceName = titleCaseInstitution(headerCandidates[0]);
-                return { code: '', niceName, num };
+
+            function isNameStarter(line) {
+                if (!line) return false;
+                if (/^INFORMATIVO/i.test(line)) return false;
+                if (!/[A-Za-zÀ-ÖØ-öø-ÿ]/.test(line)) return false;
+                const words = line.split(/\s+/).filter(Boolean);
+                if (!words.length) return false;
+                if (keyRe.test(line)) return true;
+                const letterWords = words.filter(w => /[A-Za-zÀ-ÖØ-öø-ÿ]/.test(w));
+                if (!letterWords.length) return false;
+                const uppercaseWords = letterWords.filter(w => w === w.toUpperCase());
+                const uppercaseRatio = uppercaseWords.length / letterWords.length;
+                return uppercaseRatio >= 0.6 && line.length >= 5;
+            }
+
+            function isNameContinuation(line) {
+                if (!line) return false;
+                if (/^INFORMATIVO/i.test(line)) return false;
+                if (/N\.º/i.test(line)) return false;
+                if (!/[A-Za-zÀ-ÖØ-öø-ÿ]/.test(line)) return false;
+                const words = line.split(/\s+/).filter(Boolean);
+                if (!words.length) return false;
+                if (keyRe.test(line)) return true;
+                const letterWords = words.filter(w => /[A-Za-zÀ-ÖØ-öø-ÿ]/.test(w));
+                if (!letterWords.length) return false;
+                const uppercaseWords = letterWords.filter(w => w === w.toUpperCase());
+                const uppercaseRatio = uppercaseWords.length / letterWords.length;
+                if (uppercaseRatio >= 0.5) return true;
+                return letterWords.every(w => lowerCaseWords.has(w.toLowerCase()));
+            }
+
+            // 3) Procura nas primeiras linhas por um nome completo, unindo blocos consecutivos
+            for (let i = 0; i < headerBlock.length; i++) {
+                const line = headerBlock[i];
+                if (!isNameStarter(line)) continue;
+                const group = [line];
+                let j = i + 1;
+                while (j < headerBlock.length && isNameContinuation(headerBlock[j])) {
+                    group.push(headerBlock[j]);
+                    j++;
+                }
+                addCandidate(group.join(' '), 2);
+                i = j - 1;
             }
 
             // Junta linhas quebradas curtas que pertencem à mesma frase institucional
@@ -686,9 +727,11 @@
                 merged.push(L);
             }
 
-            const candidates = merged
-                .filter(l => keyRe.test(l) && l.length >= 20)
-                .map(l => l.replace(/\s+/g, ' '));
+            for (const L of merged) {
+                if (keyRe.test(L) && L.length >= 20) {
+                    addCandidate(L);
+                }
+            }
 
             // 3.1 Heurística especial IF (pega IF + região)
             let ifCandidate = merged.find(l => /INSTITUTO FEDERAL/i.test(l));
@@ -718,6 +761,7 @@
                 if (/FACULDADE|FACULDADES/i.test(c)) score += 2;
                 if (/PONTIF[IÍ]CIA/i.test(c)) score += 1;
                 score += Math.min(c.length / 20, 5);
+                score += candidateBonuses.get(c) || 0;
                 if (score > bestScore) { bestScore = score; best = c; }
             }
 
