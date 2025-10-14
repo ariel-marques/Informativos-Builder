@@ -50,6 +50,32 @@
             border: 1px solid #202535;
         }
 
+        .dict-helper small {
+            color: #9ca3af;
+        }
+
+        .dict-search-results {
+            max-height: 180px;
+            overflow-y: auto;
+            border: 1px solid #1f2937;
+            border-radius: 8px;
+            background: #0f1320;
+        }
+
+        .dict-search-results .result-item {
+            padding: 8px 12px;
+            border-bottom: 1px solid #1f2937;
+            cursor: pointer;
+        }
+
+        .dict-search-results .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .dict-search-results .result-item:hover {
+            background: #1f2937;
+        }
+
         .badge-ok {
             background: #16a34a;
         }
@@ -105,6 +131,26 @@
                 <div class="card p-3 mt-3 text-white">
                     <h2 class="h5">Dicionário de nomes completos</h2>
                     <p class="small mb-2">Edite conforme necessário. A chave é o “código” extraído do arquivo antes do ponto (ex: <code>FECAP.281.pdf</code> → chave: <code>FECAP</code>).</p>
+
+                    <div class="dict-helper mb-3">
+                        <label class="form-label form-label-sm">Buscar instituição existente</label>
+                        <input id="dictSearch" class="form-control form-control-sm" placeholder="Digite parte do código ou nome" list="dictSuggestionsList">
+                        <div id="dictSearchResults" class="dict-search-results mt-2 small d-none"></div>
+                        <small class="d-block mt-1">Clique em um resultado para preencher o formulário de adição ou revisar o nome completo.</small>
+                    </div>
+                    <div class="dict-helper mb-3">
+                        <label class="form-label form-label-sm">Adicionar nova instituição</label>
+                        <div class="row g-2 mb-2">
+                            <div class="col-12 col-lg-5">
+                                <input id="newDictCode" class="form-control form-control-sm" placeholder="Código (ex.: FECAP)">
+                            </div>
+                            <div class="col-12 col-lg-7">
+                                <input id="newDictName" class="form-control form-control-sm" placeholder="Nome completo">
+                            </div>
+                        </div>
+                        <button id="addDictEntry" class="btn btn-sm btn-outline-primary">Adicionar ao dicionário</button>
+                        <div id="dictFeedback" class="small mt-2"></div>
+                    </div>
                     <textarea id="dictArea" rows="12" class="form-control code-preview">
                         {
                         "ENEM": "Exame Nacional do Ensino Médio (ENEM)",
@@ -476,6 +522,9 @@
         </div>
     </div>
 
+    <datalist id="dictSuggestionsList"></datalist>
+    <datalist id="niceNameSuggestions"></datalist>
+
     <script>
         const $ = sel => document.querySelector(sel);
         const drop = $('#drop');
@@ -486,9 +535,19 @@
         const downloadAllBtn = $('#downloadAll');
         const applyDictBtn = $('#applyDict');
         const dictArea = $('#dictArea');
+        const dictSearchInput = $('#dictSearch');
+        const dictSearchResults = $('#dictSearchResults');
+        const dictSuggestionsList = $('#dictSuggestionsList');
+        const niceNameSuggestionsList = $('#niceNameSuggestions');
+        const newDictCodeInput = $('#newDictCode');
+        const newDictNameInput = $('#newDictName');
+        const addDictEntryBtn = $('#addDictEntry');
+        const dictFeedback = $('#dictFeedback');
 
         let dict = {};
         let queue = []; // {file, code, num, niceName, blobOut?, filenameOut?, ok?, error?}
+
+        const LOCAL_DICT_STORAGE_KEY = 'informativos-builder.dict.v1';
 
         const svgIcon = `
 <svg aria-labelledby="icon-download-solid" role="img" enable-background="new 0 0 24 24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="svg-8 svg-fill-white mb-1">
@@ -498,21 +557,180 @@
 
         function toast(msg) { console.log(msg); }
 
+        function escapeHtml(str) {
+            return String(str ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+            }[ch] || ch));
+        }
+
+        function persistDictAreaValue() {
+            if (!dictArea) return;
+            try {
+                localStorage.setItem(LOCAL_DICT_STORAGE_KEY, dictArea.value);
+            } catch (err) {
+                console.warn('Não foi possível salvar o dicionário local.', err);
+            }
+        }
+
+        function loadStoredDictArea() {
+            if (!dictArea) return;
+            try {
+                const stored = localStorage.getItem(LOCAL_DICT_STORAGE_KEY);
+                if (stored) {
+                    dictArea.value = stored;
+                }
+            } catch (err) {
+                console.warn('Não foi possível carregar o dicionário salvo.', err);
+            }
+        }
+
+        function refreshDictSuggestions() {
+            const entries = Object.entries(dict || {});
+            entries.sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'));
+
+            if (dictSuggestionsList) {
+                dictSuggestionsList.innerHTML = entries
+                    .map(([code, name]) => `<option value="${escapeHtml(code)}">${escapeHtml(name)}</option>`)
+                    .join('');
+            }
+
+            if (niceNameSuggestionsList) {
+                const seen = new Set();
+                const nameOptions = [];
+                for (const [, name] of entries) {
+                    if (seen.has(name)) continue;
+                    seen.add(name);
+                    nameOptions.push(`<option value="${escapeHtml(name)}"></option>`);
+                }
+                niceNameSuggestionsList.innerHTML = nameOptions.join('');
+            }
+        }
+
+        function updateDictSearchResults(query = '') {
+            if (!dictSearchResults) return;
+            const q = String(query || '').trim().toLowerCase();
+            if (!q) {
+                dictSearchResults.innerHTML = '';
+                dictSearchResults.classList.add('d-none');
+                return;
+            }
+
+            const matches = Object.entries(dict || {})
+                .filter(([code, name]) => code.toLowerCase().includes(q) || String(name).toLowerCase().includes(q))
+                .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
+                .slice(0, 20);
+
+            if (!matches.length) {
+                dictSearchResults.innerHTML = '<div class="p-2 text-warning">Nenhuma instituição encontrada.</div>';
+                dictSearchResults.classList.remove('d-none');
+                return;
+            }
+
+            const html = matches.map(([code, name]) => `
+                <div class="result-item" data-code="${escapeHtml(code)}" data-name="${escapeHtml(name)}">
+                    <strong>${escapeHtml(code)}</strong><br>
+                    <span class="text-muted">${escapeHtml(name)}</span>
+                </div>
+            `).join('');
+
+            dictSearchResults.innerHTML = html;
+            dictSearchResults.classList.remove('d-none');
+        }
+
+        function applyDictToQueueFromDict() {
+            if (!queue.length) return;
+            let changed = false;
+            for (const entry of queue) {
+                if ((!entry.niceName || entry.niceNameMissing) && dict && dict[entry.code]) {
+                    entry.niceName = dict[entry.code];
+                    entry.niceNameMissing = false;
+                    changed = true;
+                }
+            }
+            if (changed) refreshTable();
+        }
+
+        function setDictFeedback(message, type = 'success') {
+            if (!dictFeedback) return;
+            dictFeedback.textContent = message;
+            dictFeedback.classList.remove('text-success', 'text-danger');
+            dictFeedback.classList.add(type === 'error' ? 'text-danger' : 'text-success');
+        }
+
         // -----------------------
         // DICIONÁRIO (opcional)
         // -----------------------
-        function parseDict() {
+        function parseDict(showToast = true) {
+            if (!dictArea) return;
             try {
                 dict = JSON.parse(dictArea.value);
-                toast('Dicionário aplicado.');
+                refreshDictSuggestions();
+                updateDictSearchResults(dictSearchInput ? dictSearchInput.value : '');
+                persistDictAreaValue();
+                applyDictToQueueFromDict();
+                if (showToast) toast('Dicionário aplicado.');
             } catch (e) {
                 alert('JSON do dicionário inválido.');
             }
         }
+        if (dictArea) {
+            loadStoredDictArea();
+        }
         if (applyDictBtn) {
-            applyDictBtn.addEventListener('click', parseDict);
-            // Se existir dictArea, tenta carregar, senão segue vazio
-            if (dictArea) parseDict();
+            applyDictBtn.addEventListener('click', () => parseDict(true));
+            if (dictArea) parseDict(false);
+        }
+
+        if (dictSearchInput) {
+            dictSearchInput.addEventListener('input', e => updateDictSearchResults(e.target.value));
+            dictSearchInput.addEventListener('change', e => updateDictSearchResults(e.target.value));
+            dictSearchInput.addEventListener('focus', e => updateDictSearchResults(e.target.value));
+        }
+
+        if (dictSearchResults) {
+            dictSearchResults.addEventListener('click', e => {
+                const item = e.target.closest('.result-item');
+                if (!item) return;
+                const code = item.getAttribute('data-code') || '';
+                const name = item.getAttribute('data-name') || '';
+                if (dictSearchInput) dictSearchInput.value = code;
+                if (newDictCodeInput) newDictCodeInput.value = code;
+                if (newDictNameInput) newDictNameInput.value = name;
+                dictSearchResults.classList.add('d-none');
+            });
+        }
+
+        document.addEventListener('click', e => {
+            if (!dictSearchResults) return;
+            if (dictSearchResults.contains(e.target) || dictSearchInput === e.target) return;
+            dictSearchResults.classList.add('d-none');
+        });
+
+        if (addDictEntryBtn) {
+            addDictEntryBtn.addEventListener('click', () => {
+                const code = (newDictCodeInput?.value || '').trim();
+                const name = (newDictNameInput?.value || '').trim();
+                if (!code || !name) {
+                    setDictFeedback('Informe o código e o nome completo para adicionar ao dicionário.', 'error');
+                    return;
+                }
+
+                dict = dict || {};
+                dict[code] = name;
+                if (dictArea) {
+                    dictArea.value = JSON.stringify(dict, null, 4);
+                    parseDict(false);
+                }
+                persistDictAreaValue();
+                updateDictSearchResults(dictSearchInput ? dictSearchInput.value : '');
+                setDictFeedback(`Registro para "${code}" atualizado.`, 'success');
+                if (newDictCodeInput) newDictCodeInput.value = '';
+                if (newDictNameInput) newDictNameInput.value = '';
+            });
         }
 
         // -----------------------
@@ -553,12 +771,12 @@
             const miss = entry.niceNameMissing;
             return `
       <tr>
-        <td class="small">${entry.file.name}</td>
-        <td class="small"><code>${entry.code}</code></td>
-        <td class="small text-center">${entry.num || '-'}</td>
+        <td class="small">${escapeHtml(entry.file.name)}</td>
+        <td class="small"><code>${escapeHtml(entry.code)}</code></td>
+        <td class="small text-center">${escapeHtml(entry.num || '-')}</td>
         <td class="small">
-          <input class="form-control form-control-sm" data-idx="${idx}" data-field="niceName"
-                 value="${entry.niceName || ''}" placeholder="Nome completo (title)">
+          <input class="form-control form-control-sm" data-idx="${idx}" data-field="niceName" list="niceNameSuggestions"
+                 value="${escapeHtml(entry.niceName || '')}" placeholder="Nome completo (title)">
         </td>
         <td class="small">
           ${entry.ok ? '<span class="badge badge-ok">OK</span>' :
